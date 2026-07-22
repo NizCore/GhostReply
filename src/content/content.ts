@@ -5,12 +5,12 @@ import {
   GeneratedComment,
   GenerationOptions,
   UserSettings
-} from '@types';
-import { getContextExtractor, resetContextExtractor } from '@services/contextExtractor';
-import { getCommentInserter, resetCommentInserter } from '@services/commentInserter';
-import { getAIService, resetAIService } from '@services/aiService';
-import { getSettings, saveSettings } from '@utils/storage';
-import { createMessageHandler } from '@utils/messenger';
+} from '../types';
+import { getContextExtractor, resetContextExtractor } from '../services/contextExtractor';
+import { getCommentInserter, resetCommentInserter } from '../services/commentInserter';
+import { getAIService, resetAIService } from '../services/aiService';
+import { getSettings, saveSettings } from '../utils/storage';
+import { createMessageHandler } from '../utils/messenger';
 
 // Global state
 let currentSettings: UserSettings | null = null;
@@ -43,17 +43,17 @@ async function initialize() {
 // Initialize on script load
 initialize();
 
-// Set up message handlers for content script
-const contentMessageHandlers: Record<MessageType, (data: any, requestId: string) => Promise<any>> = {
+// Set up message handlers for content script - use string literals instead of MessageType
+const contentMessageHandlers: Record<string, (data: any, requestId: string) => Promise<any>> = {
   // Context extraction
-  [MessageType.EXTRACT_CONTEXT]: async () => {
+  EXTRACT_CONTEXT: async () => {
     const extractor = getContextExtractor();
     const context = await extractor.extractContext();
     return context;
   },
 
   // Comment generation
-  [MessageType.GENERATE_COMMENT]: async (data: { context?: Partial<ExtractedContext>; options: GenerationOptions }) => {
+  GENERATE_COMMENT: async (data: { context?: Partial<ExtractedContext>; options: GenerationOptions }) => {
     const aiService = getAIService();
     
     if (!aiService.isConfigured()) {
@@ -72,7 +72,7 @@ const contentMessageHandlers: Record<MessageType, (data: any, requestId: string)
   },
 
   // Comment insertion
-  [MessageType.INSERT_COMMENT]: async (data: { comment: string }) => {
+  INSERT_COMMENT: async (data: { comment: string }) => {
     const inserter = getCommentInserter();
     const success = inserter.insertComment(data.comment);
     
@@ -84,7 +84,7 @@ const contentMessageHandlers: Record<MessageType, (data: any, requestId: string)
   },
 
   // Generate from selected text
-  [MessageType.GENERATE_FROM_SELECTION]: async (data: { text: string }) => {
+  GENERATE_FROM_SELECTION: async (data: { text: string }) => {
     const extractor = getContextExtractor();
     const context = extractor.extractFromSelectedText();
     
@@ -105,7 +105,7 @@ const contentMessageHandlers: Record<MessageType, (data: any, requestId: string)
   },
 
   // Generate reply from selected text
-  [MessageType.GENERATE_REPLY_FROM_SELECTION]: async (data: { text: string }) => {
+  GENERATE_REPLY_FROM_SELECTION: async (data: { text: string }) => {
     const extractor = getContextExtractor();
     const context = extractor.extractFromSelectedText();
     
@@ -130,12 +130,12 @@ const contentMessageHandlers: Record<MessageType, (data: any, requestId: string)
   },
 
   // Settings
-  [MessageType.GET_SETTINGS]: async () => {
+  GET_SETTINGS: async () => {
     currentSettings = await getSettings();
     return currentSettings;
   },
 
-  [MessageType.SAVE_SETTINGS]: async (data: UserSettings) => {
+  SAVE_SETTINGS: async (data: UserSettings) => {
     currentSettings = data;
     await saveSettings(data);
     resetAIService();
@@ -145,7 +145,7 @@ const contentMessageHandlers: Record<MessageType, (data: any, requestId: string)
 };
 
 // Create message handler for content script
-const contentMessageHandler = createMessageHandler(contentMessageHandlers);
+const contentMessageHandler = createMessageHandler(contentMessageHandlers as Record<MessageType, (data: any, requestId: string) => Promise<any>>);
 
 // Set up runtime message listener
 chrome.runtime.onMessage.addListener(contentMessageHandler);

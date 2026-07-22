@@ -29,7 +29,7 @@ import {
   Sun,
   Monitor,
   Key,
-  Robot,
+  Bot,
   Thermometer,
   Type,
   Globe,
@@ -225,7 +225,7 @@ function OptionsPage() {
         <section className="options-section">
           <div className="options-section-header">
             <h2 className="options-section-title">
-              <Robot className="w-5 h-5 mr-2 inline" />
+              <Bot className="w-5 h-5 mr-2 inline" />
               AI Configuration
             </h2>
             <p className="options-section-description">
@@ -274,7 +274,7 @@ function OptionsPage() {
 
               <div className="api-config-item">
                 <label className="api-config-label">
-                  <Robot className="w-4 h-4 mr-2 inline" />
+                  <Bot className="w-4 h-4 mr-2 inline" />
                   Model
                 </label>
                 <div className="flex gap-2">
@@ -508,7 +508,7 @@ function OptionsPage() {
                 </li>
                 <li className="custom-list-item">
                   <div className="custom-list-icon">
-                    <Robot className="w-4 h-4" />
+                    <Bot className="w-4 h-4" />
                   </div>
                   <div className="custom-list-content">
                     <div className="custom-list-title">Model Support</div>

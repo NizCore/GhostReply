@@ -1,6 +1,7 @@
 import { 
   ExtensionMessage, 
   MessageType, 
+  MESSAGE_TYPES,
   UserSettings, 
   ExtractedContext, 
   GeneratedComment, 
@@ -9,13 +10,13 @@ import {
   FavoriteComment,
   StorageKeys,
   DEFAULT_SETTINGS
-} from '@types';
-import { getSettings, saveSettings, getHistory, saveHistory, addHistoryItem, getFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite, migrateStorage } from '@utils/storage';
-import { getAIService, resetAIService } from '@services/aiService';
-import { getContextExtractor, resetContextExtractor } from '@services/contextExtractor';
-import { getPromptBuilder, resetPromptBuilder } from '@services/promptBuilder';
-import { generateId, sanitizeText } from '@utils/helpers';
-import { createMessageHandler } from '@utils/messenger';
+} from '../types';
+import { getSettings, saveSettings, getHistory, saveHistory, addHistoryItem, getFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite, migrateStorage } from '../utils/storage';
+import { getAIService, resetAIService } from '../services/aiService';
+import { getContextExtractor, resetContextExtractor } from '../services/contextExtractor';
+import { getPromptBuilder, resetPromptBuilder } from '../services/promptBuilder';
+import { generateId, sanitizeText } from '../utils/helpers';
+import { createMessageHandler } from '../utils/messenger';
 
 // Initialize storage migration
 migrateStorage();
@@ -135,15 +136,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-// Set up message handlers
-const messageHandlers: Record<MessageType, (data: any, requestId: string) => Promise<any>> = {
+// Set up message handlers - use a type assertion to handle the MessageType union
+const messageHandlers: Record<string, (data: any, requestId: string) => Promise<any>> = {
   // Settings handlers
-  [MessageType.GET_SETTINGS]: async () => {
+  GET_SETTINGS: async () => {
     currentSettings = await getSettings();
     return currentSettings;
   },
 
-  [MessageType.SAVE_SETTINGS]: async (data: UserSettings) => {
+  SAVE_SETTINGS: async (data: UserSettings) => {
     currentSettings = data;
     await saveSettings(data);
     resetAIService();
@@ -152,7 +153,7 @@ const messageHandlers: Record<MessageType, (data: any, requestId: string) => Pro
   },
 
   // Context extraction handlers
-  [MessageType.EXTRACT_CONTEXT]: async (data: { tabId?: number }) => {
+  EXTRACT_CONTEXT: async (data: { tabId?: number }) => {
     const tabId = data.tabId || (await getCurrentTabId());
     if (!tabId) {
       throw new Error('No active tab found');
@@ -172,11 +173,11 @@ const messageHandlers: Record<MessageType, (data: any, requestId: string) => Pro
     }
 
     // Fallback: send message to content script
-    return await sendMessageToTab(tabId, MessageType.EXTRACT_CONTEXT);
+    return await sendMessageToTab(tabId, 'EXTRACT_CONTEXT');
   },
 
   // Comment generation handlers
-  [MessageType.GENERATE_COMMENT]: async (data: { context: Partial<ExtractedContext>; options: GenerationOptions }) => {
+  GENERATE_COMMENT: async (data: { context: Partial<ExtractedContext>; options: GenerationOptions }) => {
     const aiService = getAIService();
     
     if (!aiService.isConfigured()) {
@@ -199,43 +200,43 @@ const messageHandlers: Record<MessageType, (data: any, requestId: string) => Pro
   },
 
   // Insert comment handlers
-  [MessageType.INSERT_COMMENT]: async (data: { comment: string; tabId?: number }) => {
+  INSERT_COMMENT: async (data: { comment: string; tabId?: number }) => {
     const tabId = data.tabId || (await getCurrentTabId());
     if (!tabId) {
       throw new Error('No active tab found');
     }
 
     // Send message to content script to insert comment
-    return await sendMessageToTab(tabId, MessageType.INSERT_COMMENT, data);
+    return await sendMessageToTab(tabId, 'INSERT_COMMENT', data);
   },
 
   // History handlers
-  [MessageType.GET_HISTORY]: async () => {
+  GET_HISTORY: async () => {
     return await getHistory();
   },
 
-  [MessageType.SAVE_HISTORY]: async (data: HistoryItem[]) => {
+  SAVE_HISTORY: async (data: HistoryItem[]) => {
     await saveHistory(data);
     return { success: true };
   },
 
   // Favorites handlers
-  [MessageType.GET_FAVORITES]: async () => {
+  GET_FAVORITES: async () => {
     return await getFavorites();
   },
 
-  [MessageType.SAVE_FAVORITE]: async (data: FavoriteComment) => {
+  SAVE_FAVORITE: async (data: FavoriteComment) => {
     await addFavorite(data);
     return { success: true };
   },
 
-  [MessageType.REMOVE_FAVORITE]: async (data: { commentId: string }) => {
+  REMOVE_FAVORITE: async (data: { commentId: string }) => {
     await removeFavorite(data.commentId);
     return { success: true };
   },
 
   // Side panel handlers
-  [MessageType.OPEN_SIDE_PANEL]: async (data: { tabId?: number }) => {
+  OPEN_SIDE_PANEL: async (data: { tabId?: number }) => {
     const tabId = data.tabId || (await getCurrentTabId());
     if (!tabId) {
       throw new Error('No active tab found');
@@ -248,7 +249,7 @@ const messageHandlers: Record<MessageType, (data: any, requestId: string) => Pro
     return { success: false, error: 'Side panel not available' };
   },
 
-  [MessageType.CLOSE_SIDE_PANEL]: async (data: { tabId?: number }) => {
+  CLOSE_SIDE_PANEL: async (data: { tabId?: number }) => {
     const tabId = data.tabId || (await getCurrentTabId());
     if (!tabId) {
       throw new Error('No active tab found');
@@ -263,7 +264,7 @@ const messageHandlers: Record<MessageType, (data: any, requestId: string) => Pro
 };
 
 // Create message handler
-const messageHandler = createMessageHandler(messageHandlers);
+const messageHandler = createMessageHandler(messageHandlers as Record<MessageType, (data: any, requestId: string) => Promise<any>>);
 
 // Set up runtime message listener
 chrome.runtime.onMessage.addListener(messageHandler);
@@ -275,7 +276,7 @@ async function getCurrentTabId(): Promise<number | undefined> {
 }
 
 // Helper function to send message to a specific tab
-async function sendMessageToTab(tabId: number, type: MessageType, data?: any): Promise<any> {
+async function sendMessageToTab(tabId: number, type: string, data?: any): Promise<any> {
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, { type, data }, (response) => {
       if (chrome.runtime.lastError) {
