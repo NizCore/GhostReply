@@ -1,42 +1,51 @@
 # GhostReply
 
-GhostReply 👻 is an AI-powered Chrome extension that helps you write thoughtful, engaging, and context-aware comments across YouTube, LinkedIn, X (Twitter), and Reddit. With a single click, it analyzes the conversation and generates natural replies that match your preferred tone, whether professional, friendly, insightful, humorous, or supportive.
+GhostReply is an AI-powered Chrome extension that helps you write thoughtful, engaging, and context-aware comments across YouTube, LinkedIn, X (Twitter), and Reddit. With a single click, it analyzes the conversation and generates natural replies from a **human commenter** perspective — matching your preferred tone, whether professional, friendly, insightful, humorous, or supportive.
+
+## Owner
+
+| | |
+|---|---|
+| **Owner** | Mohammad Nizam Uddin Imran |
+| **Website** | [imrann.my.id](https://imrann.my.id) |
+
+**Made with** ChatGPT, Mistral, and Cursor.
 
 ## Features
 
-### 🎯 Platform Support
-- **YouTube** - Generate comments for videos
-- **LinkedIn** - Professional comments for posts and articles
-- **X (Twitter)** - Witty and concise replies
-- **Reddit** - Engaging comments for threads
+### Platform Support
+- **YouTube** — Generate comments for videos
+- **LinkedIn** — Professional comments for posts and articles
+- **X (Twitter)** — Witty and concise replies
+- **Reddit** — Engaging comments for threads
 
-### ✨ AI-Powered Generation
-- **Context-aware** - Analyzes page content, titles, descriptions, and more
-- **Multiple tones** - Professional, Friendly, Casual, Funny, Insightful, Supportive, Formal, Curious, Critical
-- **Customizable length** - Very Short, Short, Medium, Long
-- **Language support** - Auto-detect, English, Bangla, Spanish, French, German, Japanese, Chinese, Arabic
-- **Multiple variations** - Generate 1, 3, or 5 unique comments at once
+### AI-Powered Generation
+- **Context-aware** — Analyzes page content, titles, descriptions, and more
+- **Human commenter style** — Writes as a real person reacting to the post
+- **Multiple tones** — Professional, Friendly, Casual, Funny, Insightful, Supportive, Formal, Curious, Critical
+- **Customizable length** — Very Short, Short, Medium, Long
+- **Language support** — Auto-detect, English, Bangla, Spanish, French, German, Japanese, Chinese, Arabic
+- **Multiple variations** — Generate 1–5 unique comments at once
 
-### 💡 Smart Features
-- **Automatic platform detection** - Knows which platform you're on
-- **Selected text support** - Generate comments from highlighted text
-- **Context menu integration** - Right-click to generate comments
-- **Keyboard shortcut** - Ctrl+Shift+G to open GhostReply
-- **Side panel** - Full-featured interface for extended use
+### Smart Features
+- **Automatic platform detection**
+- **Selected text support** — Generate from highlighted text
+- **Context menu** — Right-click to generate comments or replies
+- **Keyboard shortcut** — `Ctrl+Shift+G` to open GhostReply
+- **Side panel** — Full-featured interface for extended use
 
-### 📝 Comment Management
-- **Copy to clipboard** - One-click copy
-- **Auto-insert** - Insert directly into comment boxes
-- **Regenerate** - Get different variations
-- **History** - View past generations
-- **Favorites** - Save your best comments
+### Comment Management
+- Copy to clipboard
+- Insert into comment boxes
+- Regenerate variations
+- History of past generations
+- Favorites for your best comments
 
-### 🎨 Customization
-- **API Configuration** - Use any OpenAI-compatible API
-- **Model selection** - Choose from various AI models
-- **Temperature control** - Adjust creativity level
-- **Token limits** - Control response length
-- **Theme support** - Light, Dark, or System preference
+### Customization
+- Any **OpenAI-compatible** API (including Bynara and others)
+- Model selection (type any model id your provider supports)
+- Temperature and max tokens
+- Light / Dark / System theme
 
 ## Installation
 
@@ -56,237 +65,159 @@ GhostReply 👻 is an AI-powered Chrome extension that helps you write thoughtfu
 2. **Install dependencies:**
    ```bash
    npm install
-   # or
-   yarn install
    ```
 
 3. **Build the extension:**
    ```bash
    npm run build
-   # or
-   yarn build
    ```
 
 4. **Load in Chrome:**
-   - Open Chrome and go to `chrome://extensions/`
-   - Enable **Developer mode** (toggle in top right)
+   - Open `chrome://extensions/`
+   - Enable **Developer mode**
    - Click **Load unpacked**
-   - Select the `dist` folder from your project
+   - Select the `dist` folder
 
 5. **Configure API:**
-   - Click the GhostReply icon in your extensions bar
-   - Go to Settings
-   - Enter your OpenAI-compatible API key and base URL
-   - Test the connection
-   - Save settings
+   - Open GhostReply → Settings (or Options)
+   - Enter:
+     - **Base URL** — e.g. `https://router.bynara.id/v1`
+     - **API Key** — your provider key
+     - **Model** — e.g. `agnes-2.0-flash`, `mistral-large`, `claude-opus-4.8-bynara`
+   - Click **Test Connection**, then **Save Settings**
 
 ### Development Mode
 
-To run in development mode with hot reloading:
-
 ```bash
 npm run dev
-# or
-yarn dev
 ```
 
-Then load the `dist` folder in Chrome as described above.
+Then load the `dist` folder in Chrome as above.
 
 ## Configuration
 
 ### API Settings
 
-GhostReply supports any OpenAI-compatible API. Here are some popular options:
+GhostReply works with any OpenAI-compatible chat completions API:
 
 | Provider | Base URL | Notes |
 |----------|----------|-------|
+| Bynara / NaraRouter | `https://router.bynara.id/v1` | Default-friendly OpenAI-compatible router |
 | OpenAI | `https://api.openai.com/v1` | Official OpenAI API |
-| Anthropic | `https://api.anthropic.com/v1` | Claude models |
-| Google | `https://generativelanguage.googleapis.com/v1beta` | Gemini models |
 | Mistral | `https://api.mistral.ai/v1` | Mistral models |
 | Local | `http://localhost:11434/v1` | Ollama, LM Studio, etc. |
 
-### Recommended Models
-
-- **GPT-4 Turbo** - Best quality, fast
-- **GPT-3.5 Turbo** - Good balance of quality and cost
-- **Claude 3 Sonnet** - Excellent for nuanced comments
-- **Llama 3 70B** - Great open-source option
-- **Mistral Large** - High-quality European model
+Use the `/v1` root only — not the full `/chat/completions` path.
 
 ### Model Parameters
 
-- **Temperature**: Controls randomness (0-2)
-  - Lower = more deterministic
-  - Higher = more creative
-  - Recommended: 0.7-1.0
-
-- **Max Tokens**: Limits response length
-  - Recommended: 500-1000 for comments
+- **Temperature** (0–2): lower = more focused, higher = more creative (try `0.7`–`1.0`)
+- **Max Tokens**: response length budget (try `500`–`1000` for comments)
 
 ## Usage
 
-### Basic Usage
-
-1. Navigate to any supported platform (YouTube, LinkedIn, X, Reddit)
-2. Click the GhostReply extension icon
-3. Adjust tone, length, and language as desired
+1. Open a supported site (YouTube, LinkedIn, X, Reddit)
+2. Click the GhostReply icon (or press `Ctrl+Shift+G`)
+3. Choose tone, length, and language
 4. Click **Generate Comments**
-5. Copy or insert your favorite comment
+5. Copy or insert your favorite reply
 
-### Advanced Usage
+### Shortcuts & context menu
 
-- **Right-click text** → **GhostReply: Generate Comment** - Generate from selected text
-- **Right-click text** → **GhostReply: Generate Reply** - Reply to selected comment
-- **Ctrl+Shift+G** - Open GhostReply side panel
-- **Side Panel** → Access history, favorites, and full generation options
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Shift+G | Open GhostReply side panel |
-
-### Context Menu
-
-- **Generate Comment** - Generate comment from selected text
-- **Generate Reply** - Generate reply to selected text
-- **Open Side Panel** - Open the full GhostReply interface
+| Action | How |
+|--------|-----|
+| Open side panel | `Ctrl+Shift+G` |
+| Generate from selection | Right-click → **GhostReply: Generate Comment** |
+| Reply to selection | Right-click → **GhostReply: Generate Reply** |
 
 ## Project Structure
 
 ```
-ghostreply/
+GhostReply/
 ├── src/
-│   ├── background/          # Background service worker
-│   │   └── background.ts
-│   ├── content/             # Content scripts
-│   │   └── content.ts
-│   ├── popup/               # Browser action popup
-│   │   ├── popup.html
-│   │   ├── popup.tsx
-│   │   └── popup.css
-│   ├── sidepanel/           # Side panel interface
-│   │   ├── sidepanel.html
-│   │   ├── sidepanel.tsx
-│   │   └── sidepanel.css
-│   ├── options/             # Options page
-│   │   ├── options.html
-│   │   ├── options.tsx
-│   │   └── options.css
-│   ├── components/          # React components
-│   │   ├── Button.tsx
-│   │   ├── Input.tsx
-│   │   ├── Select.tsx
-│   │   └── ...
-│   ├── hooks/               # Custom React hooks
-│   │   ├── useStorage.ts
-│   │   ├── useAI.ts
-│   │   └── ...
-│   ├── services/            # Business logic services
-│   │   ├── aiService.ts
-│   │   ├── contextExtractor.ts
-│   │   ├── commentInserter.ts
-│   │   └── promptBuilder.ts
-│   ├── utils/               # Utility functions
-│   │   ├── storage.ts
-│   │   ├── helpers.ts
-│   │   ├── messenger.ts
-│   │   └── cn.ts
-│   ├── types/               # TypeScript types
-│   │   └── index.ts
-│   └── assets/              # Static assets
-│
-├── public/                 # Public assets
-│   └── icons/
-│       └── icon.svg
-├── manifest.json           # Chrome extension manifest
+│   ├── background/          # Service worker (messaging, AI, history)
+│   ├── content/             # Page context + comment insertion
+│   ├── popup/               # Extension popup UI
+│   ├── sidepanel/           # Side panel UI
+│   ├── options/             # Settings page
+│   ├── components/          # Shared React components
+│   ├── hooks/               # React hooks (storage, AI)
+│   ├── services/            # AI, context, prompts, inserter
+│   ├── utils/               # Storage, helpers, messaging
+│   └── types/               # TypeScript types
+├── public/                  # Static assets (icon)
+├── dist/                    # Build output (load this in Chrome)
+├── manifest.json
 ├── package.json
 ├── vite.config.ts
-├── tailwind.config.js
-├── postcss.config.js
 └── README.md
 ```
 
 ## Tech Stack
 
-- **Chrome Extension Manifest V3** - Modern Chrome extension architecture
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Vite** - Build tool
-- **Tailwind CSS** - Utility-first CSS
-- **Lucide React** - Icon library
-- **Chrome Storage API** - Persistent storage
-- **OpenAI Compatible API** - AI model integration
+- Chrome Extension Manifest V3
+- React 18 + TypeScript
+- Vite + `@crxjs/vite-plugin`
+- Tailwind CSS
+- Lucide React
+- Chrome Storage API (`local`)
+- OpenAI-compatible Chat Completions API
 
 ## Permissions
 
-GhostReply requires the following permissions:
+- `storage` — settings, history, favorites
+- `activeTab` / `tabs` — current page context
+- `scripting` — content script helpers
+- `contextMenus` — right-click actions
 
-- `storage` - Save settings, history, and favorites
-- `activeTab` - Access current tab for context extraction
-- `scripting` - Inject content scripts
-- `tabs` - Query and manage tabs
-- `contextMenus` - Add right-click context menu items
+Supported sites (content scripts): YouTube, LinkedIn, X/Twitter, Reddit.  
+Network access is used to call your configured AI endpoint.
 
-Host permissions:
-- `https://*.youtube.com/*`
-- `https://*.linkedin.com/*`
-- `https://*.x.com/*`
-- `https://*.twitter.com/*`
-- `https://*.reddit.com/*`
+## Security & Privacy
 
-## Security
+- API keys are stored in **Chrome local storage** on your device
+- Page context is sent only to the AI endpoint you configure
+- No analytics or third-party tracking built into the extension
+- Comments are cleaned for display/copy (no HTML-entity mangling)
 
-- ✅ API keys are stored securely in Chrome's sync storage
-- ✅ All extracted content is sanitized to prevent XSS
-- ✅ Follows Manifest V3 best practices
-- ✅ All messages between components are validated
-- ✅ No external tracking or analytics
+## Publishing (Chrome Web Store)
+
+1. `npm run build`
+2. Zip the contents of `dist/`
+3. Create a listing at the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
+4. Provide screenshots, privacy policy, and permission justifications
+5. Submit for review
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome — open a Pull Request on [GitHub](https://github.com/NizCore/GhostReply).
 
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Style
-
-- Follow TypeScript best practices
-- Use Tailwind CSS for styling
-- Keep components small and focused
-- Add appropriate types and interfaces
-- Include JSDoc comments for complex functions
+1. Fork the repo
+2. Create a feature branch
+3. Commit and push
+4. Open a PR
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Support
 
-For issues, questions, or feedback:
-
-- Open an issue on [GitHub](https://github.com/NizCore/GhostReply)
-- Check the [documentation](#) (coming soon)
+- Issues: [github.com/NizCore/GhostReply](https://github.com/NizCore/GhostReply)
+- Owner site: [imrann.my.id](https://imrann.my.id)
 
 ## Roadmap
 
-- [ ] Browser support (Firefox, Edge)
-- [ ] More platform support (Facebook, Instagram, etc.)
+- [ ] Firefox / Edge support
+- [ ] More platforms (Facebook, Instagram, etc.)
 - [ ] Custom prompt templates
 - [ ] Comment scheduling
-- [ ] Team collaboration features
-- [ ] Cloud sync across devices
-- [ ] Mobile companion app
+- [ ] Team / collaboration features
 
 ---
 
-**GhostReply** - Your AI comment companion for social media
+**GhostReply** — AI comments that sound like a real commenter.
 
-*Made with ❤️ and AI*
+**Owner:** Mohammad Nizam Uddin Imran · [imrann.my.id](https://imrann.my.id)
+
+*Made with ChatGPT, Mistral, and Cursor.*
