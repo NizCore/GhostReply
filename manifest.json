@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "GhostReply",
+  "version": "1.0.0",
+  "description": "AI-powered Chrome extension for generating context-aware comments on social media platforms",
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "options_page": "src/options/options.html",
+  "background": {
+    "service_worker": "src/background/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.youtube.com/*",
+        "https://*.linkedin.com/*",
+        "https://*.x.com/*",
+        "https://*.twitter.com/*",
+        "https://*.reddit.com/*"
+      ],
+      "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://*.youtube.com/*",
+    "https://*.linkedin.com/*",
+    "https://*.x.com/*",
+    "https://*.twitter.com/*",
+    "https://*.reddit.com/*"
+  ],
+  "commands": {
+    "open_ghostreply": {
+      "suggested_keyboard_shortcut": "Ctrl+Shift+G",
+      "description": "Open GhostReply"
+    }
+  },
+  "minimum_chrome_version": "110",
+  "default_locale": "en"
+}

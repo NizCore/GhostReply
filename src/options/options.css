@@ -1,0 +1,304 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import popup styles */
+@import '../popup/popup.css';
+
+/* Options page specific styles */
+body {
+  min-width: 600px;
+  min-height: 100vh;
+  padding: 0;
+}
+
+/* Header styles */
+.options-header {
+  @apply bg-bg-secondary border-b border-border-color px-6 py-4 sticky top-0 z-10;
+}
+
+.options-header-content {
+  @apply max-w-4xl mx-auto flex items-center justify-between;
+}
+
+.options-title {
+  @apply text-xl font-bold text-text-primary;
+}
+
+/* Main content */
+.options-main {
+  @apply max-w-4xl mx-auto px-6 py-8;
+}
+
+/* Section styles */
+.options-section {
+  @apply mb-8;
+}
+
+.options-section-header {
+  @apply mb-4;
+}
+
+.options-section-title {
+  @apply text-lg font-semibold text-text-primary;
+}
+
+.options-section-description {
+  @apply text-sm text-text-secondary mt-1;
+}
+
+/* Form grid */
+.form-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-6;
+}
+
+.form-grid-3 {
+  @apply grid grid-cols-1 md:grid-cols-3 gap-6;
+}
+
+/* Card styles for settings groups */
+.settings-card {
+  @apply bg-bg-secondary border border-border-color rounded-xl p-6 mb-6;
+}
+
+.settings-card-header {
+  @apply mb-4 pb-4 border-b border-border-color;
+}
+
+.settings-card-title {
+  @apply text-lg font-semibold text-text-primary;
+}
+
+.settings-card-description {
+  @apply text-sm text-text-secondary mt-1;
+}
+
+/* API Configuration styles */
+.api-config {
+  @apply space-y-4;
+}
+
+.api-config-item {
+  @apply mb-4;
+}
+
+.api-config-label {
+  @apply block text-sm font-medium text-text-primary mb-2;
+}
+
+.api-config-input {
+  @apply w-full;
+}
+
+.api-config-hint {
+  @apply text-xs text-text-secondary mt-1;
+}
+
+/* Model configuration */
+.model-config {
+  @apply space-y-4;
+}
+
+.model-config-grid {
+  @apply grid grid-cols-2 md:grid-cols-3 gap-4;
+}
+
+/* Test connection button */
+.test-connection-btn {
+  @apply flex items-center gap-2;
+}
+
+.connection-status {
+  @apply text-sm;
+}
+
+.connection-status-success {
+  @apply text-green-600;
+}
+
+.connection-status-error {
+  @apply text-red-600;
+}
+
+.connection-status-loading {
+  @apply text-yellow-600;
+}
+
+/* Default settings */
+.default-settings {
+  @apply space-y-4;
+}
+
+.default-settings-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-4;
+}
+
+/* Theme settings */
+.theme-settings {
+  @apply space-y-4;
+}
+
+.theme-option {
+  @apply flex items-center gap-3 p-4 border-2 border-border-color rounded-lg cursor-pointer transition-all duration-200 hover:border-primary-500;
+}
+
+.theme-option-selected {
+  @apply border-primary-500 bg-primary-50 dark:bg-primary-900;
+}
+
+.theme-option-icon {
+  @apply w-6 h-6;
+}
+
+.theme-option-label {
+  @apply flex-1;
+}
+
+.theme-option-title {
+  @apply font-medium text-text-primary;
+}
+
+.theme-option-description {
+  @apply text-sm text-text-secondary;
+}
+
+.theme-option-radio {
+  @apply w-4 h-4;
+}
+
+/* Action buttons */
+.options-actions {
+  @apply flex gap-4 mt-8;
+}
+
+.options-actions-right {
+  @apply ml-auto;
+}
+
+/* Save button */
+.save-btn {
+  @apply btn btn-primary btn-lg;
+}
+
+/* Reset button */
+.reset-btn {
+  @apply btn btn-secondary btn-lg;
+}
+
+/* Divider */
+.divider {
+  @apply border-t border-border-color my-6;
+}
+
+.divider-text {
+  @apply text-center text-sm text-text-secondary -mt-3 bg-bg-secondary px-4;
+}
+
+/* Info box */
+.info-box {
+  @apply bg-blue-50 border border-blue-200 rounded-lg p-4 text-blue-800 dark:bg-blue-900 dark:border-blue-800 dark:text-blue-200;
+}
+
+.info-box-title {
+  @apply font-semibold mb-2;
+}
+
+.info-box-content {
+  @apply text-sm;
+}
+
+/* Warning box */
+.warning-box {
+  @apply bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 dark:bg-yellow-900 dark:border-yellow-800 dark:text-yellow-200;
+}
+
+.warning-box-title {
+  @apply font-semibold mb-2;
+}
+
+.warning-box-content {
+  @apply text-sm;
+}
+
+/* Success box */
+.success-box {
+  @apply bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 dark:bg-green-900 dark:border-green-800 dark:text-green-200;
+}
+
+.success-box-title {
+  @apply font-semibold mb-2;
+}
+
+.success-box-content {
+  @apply text-sm;
+}
+
+/* Code block styles */
+.code-block {
+  @apply bg-secondary-900 text-secondary-100 p-3 rounded-lg font-mono text-sm overflow-x-auto;
+}
+
+.code-block-light {
+  @apply bg-secondary-100 text-secondary-900;
+}
+
+/* List styles */
+.custom-list {
+  @apply space-y-2;
+}
+
+.custom-list-item {
+  @apply flex items-start gap-3;
+}
+
+.custom-list-icon {
+  @apply w-5 h-5 text-primary-600 mt-0.5 flex-shrink-0;
+}
+
+.custom-list-content {
+  @apply flex-1;
+}
+
+.custom-list-title {
+  @apply font-medium text-text-primary;
+}
+
+.custom-list-description {
+  @apply text-sm text-text-secondary;
+}
+
+/* Badge list */
+.badge-list {
+  @apply flex flex-wrap gap-2;
+}
+
+.badge-list-item {
+  @apply badge badge-secondary;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  body {
+    min-width: 100%;
+  }
+  
+  .form-grid {
+    @apply grid-cols-1;
+  }
+  
+  .form-grid-3 {
+    @apply grid-cols-1;
+  }
+  
+  .model-config-grid {
+    @apply grid-cols-1;
+  }
+  
+  .options-actions {
+    @apply flex-col gap-2;
+  }
+  
+  .options-actions-right {
+    @apply ml-0;
+  }
+}
