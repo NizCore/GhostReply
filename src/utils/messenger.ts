@@ -16,7 +16,6 @@ export async function sendMessageToBackground(
     };
 
     chrome.runtime.sendMessage(message, (response) => {
-      // Handle chrome.runtime.lastError for async responses
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
@@ -73,9 +72,9 @@ export async function sendMessageToAllTabs(
   requestId?: string
 ): Promise<any[]> {
   const results: any[] = [];
-  
+
   const tabs = await chrome.tabs.query({});
-  
+
   for (const tab of tabs) {
     if (tab.id) {
       try {
@@ -86,7 +85,7 @@ export async function sendMessageToAllTabs(
       }
     }
   }
-  
+
   return results;
 }
 
@@ -98,26 +97,42 @@ function generateRequestId(): string {
 }
 
 /**
- * Create a message handler for background service worker
+ * Create a message handler for background / content scripts.
+ * Unknown message types are ignored so other listeners (or internal
+ * extension messages) are not treated as hard failures.
  */
-export function createMessageHandler(handlers: Record<MessageType, (data: any, requestId: string) => Promise<any>>) {
-  return async (message: ExtensionMessage, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
-    try {
-      const handler = handlers[message.type];
-      
-      if (!handler) {
-        throw new Error(`No handler for message type: ${message.type}`);
-      }
-
-      const result = await handler(message.data, message.requestId || '');
-      
-      sendResponse({ data: result });
-    } catch (error) {
-      console.error('Message handler error:', error);
-      sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' });
+export function createMessageHandler(
+  handlers: Record<string, (data: any, requestId: string) => Promise<any>>
+) {
+  return (
+    message: ExtensionMessage,
+    _sender: chrome.runtime.MessageSender,
+    sendResponse: (response?: any) => void
+  ) => {
+    if (!message || typeof message.type !== 'string') {
+      return false;
     }
-    
-    // Return true to indicate we want to send a response asynchronously
+
+    const handler = handlers[message.type];
+
+    // Not for this context — let other listeners handle it
+    if (!handler) {
+      return false;
+    }
+
+    Promise.resolve()
+      .then(() => handler(message.data, message.requestId || ''))
+      .then((result) => {
+        sendResponse({ data: result });
+      })
+      .catch((error) => {
+        console.error('Message handler error:', error);
+        sendResponse({
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      });
+
+    // Keep the message channel open for the async response
     return true;
   };
 }
@@ -125,21 +140,12 @@ export function createMessageHandler(handlers: Record<MessageType, (data: any, r
 /**
  * Create a message listener for content scripts
  */
-export function createContentMessageListener(handlers: Record<MessageType, (data: any, requestId: string) => Promise<any>>) {
-  chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
-    const handler = handlers[message.type];
-    
-    if (!handler) {
-      sendResponse({ error: `No handler for message type: ${message.type}` });
-      return;
-    }
-
-    handler(message.data, message.requestId || '')
-      .then(result => sendResponse({ data: result }))
-      .catch(error => sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' }));
-    
-    return true;
-  });
+export function createContentMessageListener(
+  handlers: Record<string, (data: any, requestId: string) => Promise<any>>
+) {
+  chrome.runtime.onMessage.addListener(
+    createMessageHandler(handlers)
+  );
 }
 
 /**

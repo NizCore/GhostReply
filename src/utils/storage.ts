@@ -1,15 +1,69 @@
-import { StorageKeys, UserSettings, HistoryItem, FavoriteComment, DEFAULT_SETTINGS } from '@types';
+import { StorageKeys, UserSettings, HistoryItem, FavoriteComment, DEFAULT_SETTINGS, AIConfig } from '@types';
+
+/**
+ * Prefer local storage for settings (API keys). Sync has small quotas and
+ * caused settings to look "saved" then get overwritten/lost.
+ */
+const SETTINGS_AREA = chrome.storage.local;
+
+function normalizeAiConfig(aiConfig?: Partial<AIConfig>): AIConfig {
+  const rawKey = (aiConfig?.apiKey || '').trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+
+  const baseUrl = (aiConfig?.baseUrl || DEFAULT_SETTINGS.aiConfig.baseUrl)
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/i, '')
+    .replace(/\/responses$/i, '')
+    .replace(/\/messages$/i, '');
+
+  return {
+    baseUrl,
+    apiKey: rawKey,
+    model: (aiConfig?.model || DEFAULT_SETTINGS.aiConfig.model).trim(),
+    temperature: typeof aiConfig?.temperature === 'number'
+      ? aiConfig.temperature
+      : DEFAULT_SETTINGS.aiConfig.temperature,
+    maxTokens: typeof aiConfig?.maxTokens === 'number'
+      ? aiConfig.maxTokens
+      : DEFAULT_SETTINGS.aiConfig.maxTokens,
+  };
+}
+
+function normalizeSettings(settings?: Partial<UserSettings> | null): UserSettings {
+  return {
+    defaultTone: settings?.defaultTone || DEFAULT_SETTINGS.defaultTone,
+    defaultLength: settings?.defaultLength || DEFAULT_SETTINGS.defaultLength,
+    defaultLanguage: settings?.defaultLanguage || DEFAULT_SETTINGS.defaultLanguage,
+    theme: settings?.theme || DEFAULT_SETTINGS.theme,
+    aiConfig: normalizeAiConfig(settings?.aiConfig),
+  };
+}
 
 /**
  * Get settings from Chrome storage
  */
 export async function getSettings(): Promise<UserSettings> {
   try {
-    const result = await chrome.storage.sync.get([StorageKeys.SETTINGS]);
-    return result[StorageKeys.SETTINGS] || DEFAULT_SETTINGS;
+    const local = await chrome.storage.local.get([StorageKeys.SETTINGS]);
+    if (local[StorageKeys.SETTINGS]) {
+      return normalizeSettings(local[StorageKeys.SETTINGS]);
+    }
+
+    // Migrate from sync if present
+    const sync = await chrome.storage.sync.get([StorageKeys.SETTINGS]);
+    if (sync[StorageKeys.SETTINGS]) {
+      const migrated = normalizeSettings(sync[StorageKeys.SETTINGS]);
+      await chrome.storage.local.set({ [StorageKeys.SETTINGS]: migrated });
+      return migrated;
+    }
+
+    return { ...DEFAULT_SETTINGS, aiConfig: { ...DEFAULT_SETTINGS.aiConfig } };
   } catch (error) {
     console.error('Error getting settings:', error);
-    return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, aiConfig: { ...DEFAULT_SETTINGS.aiConfig } };
   }
 }
 
@@ -18,7 +72,8 @@ export async function getSettings(): Promise<UserSettings> {
  */
 export async function saveSettings(settings: UserSettings): Promise<void> {
   try {
-    await chrome.storage.sync.set({ [StorageKeys.SETTINGS]: settings });
+    const normalized = normalizeSettings(settings);
+    await SETTINGS_AREA.set({ [StorageKeys.SETTINGS]: normalized });
   } catch (error) {
     console.error('Error saving settings:', error);
     throw error;
@@ -43,7 +98,6 @@ export async function getHistory(): Promise<HistoryItem[]> {
  */
 export async function saveHistory(history: HistoryItem[]): Promise<void> {
   try {
-    // Keep only the last 100 items to prevent storage bloat
     const trimmedHistory = history.slice(-100);
     await chrome.storage.local.set({ [StorageKeys.HISTORY]: trimmedHistory });
   } catch (error) {
@@ -71,8 +125,18 @@ export async function addHistoryItem(item: HistoryItem): Promise<void> {
  */
 export async function getFavorites(): Promise<FavoriteComment[]> {
   try {
-    const result = await chrome.storage.sync.get([StorageKeys.FAVORITES]);
-    return result[StorageKeys.FAVORITES] || [];
+    const result = await chrome.storage.local.get([StorageKeys.FAVORITES]);
+    if (result[StorageKeys.FAVORITES]) {
+      return result[StorageKeys.FAVORITES];
+    }
+
+    const sync = await chrome.storage.sync.get([StorageKeys.FAVORITES]);
+    if (sync[StorageKeys.FAVORITES]) {
+      await chrome.storage.local.set({ [StorageKeys.FAVORITES]: sync[StorageKeys.FAVORITES] });
+      return sync[StorageKeys.FAVORITES];
+    }
+
+    return [];
   } catch (error) {
     console.error('Error getting favorites:', error);
     return [];
@@ -84,9 +148,8 @@ export async function getFavorites(): Promise<FavoriteComment[]> {
  */
 export async function saveFavorites(favorites: FavoriteComment[]): Promise<void> {
   try {
-    // Keep only the last 50 favorites
     const trimmedFavorites = favorites.slice(-50);
-    await chrome.storage.sync.set({ [StorageKeys.FAVORITES]: trimmedFavorites });
+    await chrome.storage.local.set({ [StorageKeys.FAVORITES]: trimmedFavorites });
   } catch (error) {
     console.error('Error saving favorites:', error);
     throw error;
@@ -99,7 +162,6 @@ export async function saveFavorites(favorites: FavoriteComment[]): Promise<void>
 export async function addFavorite(comment: FavoriteComment): Promise<void> {
   try {
     const favorites = await getFavorites();
-    // Check if already favorited
     const exists = favorites.some(f => f.id === comment.id);
     if (!exists) {
       favorites.push(comment);
@@ -155,7 +217,7 @@ export async function clearHistory(): Promise<void> {
  */
 export async function clearFavorites(): Promise<void> {
   try {
-    await chrome.storage.sync.remove([StorageKeys.FAVORITES]);
+    await chrome.storage.local.remove([StorageKeys.FAVORITES]);
   } catch (error) {
     console.error('Error clearing favorites:', error);
     throw error;
@@ -167,7 +229,12 @@ export async function clearFavorites(): Promise<void> {
  */
 export async function resetSettings(): Promise<void> {
   try {
-    await chrome.storage.sync.set({ [StorageKeys.SETTINGS]: DEFAULT_SETTINGS });
+    await chrome.storage.local.set({
+      [StorageKeys.SETTINGS]: {
+        ...DEFAULT_SETTINGS,
+        aiConfig: { ...DEFAULT_SETTINGS.aiConfig },
+      },
+    });
   } catch (error) {
     console.error('Error resetting settings:', error);
     throw error;
@@ -179,13 +246,22 @@ export async function resetSettings(): Promise<void> {
  */
 export async function migrateStorage(): Promise<void> {
   try {
-    // Check for old local storage settings
-    const oldSettings = await chrome.storage.local.get(['ghostreply_settings']);
-    if (oldSettings.ghostreply_settings) {
-      await chrome.storage.sync.set({ [StorageKeys.SETTINGS]: oldSettings.ghostreply_settings });
-      await chrome.storage.local.remove(['ghostreply_settings']);
+    const local = await chrome.storage.local.get([StorageKeys.SETTINGS]);
+    if (local[StorageKeys.SETTINGS]) return;
+
+    const sync = await chrome.storage.sync.get([StorageKeys.SETTINGS]);
+    if (sync[StorageKeys.SETTINGS]) {
+      await chrome.storage.local.set({
+        [StorageKeys.SETTINGS]: normalizeSettings(sync[StorageKeys.SETTINGS]),
+      });
     }
   } catch (error) {
     console.error('Error migrating storage:', error);
   }
+}
+
+export function isAIConfigured(settings?: UserSettings | null): boolean {
+  const key = settings?.aiConfig?.apiKey?.trim();
+  const baseUrl = settings?.aiConfig?.baseUrl?.trim();
+  return !!(key && baseUrl);
 }

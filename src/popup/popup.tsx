@@ -20,8 +20,9 @@ import {
   sanitizeText,
   formatDate
 } from '@utils/helpers';
-import { useSettings, useHistory, useFavorites, useTheme } from '@hooks/useStorage';
+import { useSettings, useFavorites, useTheme } from '@hooks/useStorage';
 import { useAI, useClipboard } from '@hooks/useAI';
+import { isAIConfigured as checkAIConfigured } from '@utils/storage';
 import { Button, Spinner } from '@components/Button';
 import { CustomSelect } from '@components/Select';
 import { 
@@ -44,9 +45,8 @@ import './popup.css';
  */
 function Popup() {
   const [settings] = useSettings();
-  const [, addHistoryItem] = useHistory();
   const [favorites, addFavorite] = useFavorites();
-  const [generateComments, isGenerating, generationError, testConnection] = useAI();
+  const [generateComments, isGenerating, generationError] = useAI();
   const [copyToClipboard, isCopied] = useClipboard();
   const [theme] = useTheme();
 
@@ -54,7 +54,7 @@ function Popup() {
   const [context, setContext] = useState<Partial<ExtractedContext>>({});
   const [comments, setComments] = useState<GeneratedComment[]>([]);
   const [selectedCommentIndex, setSelectedCommentIndex] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isContextLoading, setIsContextLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState<chrome.tabs.Tab | null>(null);
 
@@ -64,34 +64,65 @@ function Popup() {
   const [language, setLanguage] = useState<Language>(settings.defaultLanguage || 'auto');
   const [count, setCount] = useState<number>(1);
 
-  // Load initial data
+  // Load initial data — never block the whole UI on context extraction
   useEffect(() => {
+    let cancelled = false;
+
     async function loadInitialData() {
+      setIsContextLoading(true);
       try {
-        // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (cancelled) return;
+
         setCurrentTab(tab || null);
 
-        // Extract context
-        if (tab?.id) {
-          const response = await chrome.runtime.sendMessage({
+        if (tab?.url || tab?.title) {
+          setContext({
+            platform: getPlatformFromUrl(tab.url || '') as Platform,
+            url: tab.url || '',
+            title: tab.title || '',
+            description: '',
+            author: '',
+            postContent: '',
+            selectedText: '',
+            visibleText: '',
+          });
+        }
+
+        if (!tab?.id) return;
+
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({
             type: 'EXTRACT_CONTEXT',
             data: { tabId: tab.id },
-          });
+          }),
+          new Promise<{ error: string }>((resolve) =>
+            setTimeout(() => resolve({ error: 'Context extraction timed out' }), 4000)
+          ),
+        ]);
 
-          if (response?.data) {
-            setContext(response.data);
-          }
+        if (cancelled) return;
+
+        if (response?.error) {
+          console.warn('Context extraction:', response.error);
+          return;
+        }
+
+        if (response?.data) {
+          setContext(response.data);
         }
       } catch (err) {
-        console.error('Error loading initial data:', err);
-        setError('Failed to load page context');
+        console.warn('Error loading initial data:', err);
+        // Keep minimal tab context; do not block the UI
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsContextLoading(false);
       }
     }
 
     loadInitialData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Update settings when they change
@@ -110,7 +141,6 @@ function Popup() {
       return;
     }
 
-    setIsLoading(true);
     setError(null);
     setComments([]);
 
@@ -124,24 +154,11 @@ function Popup() {
 
       const generatedComments = await generateComments(context, options);
       setComments(generatedComments);
-      
-      // Save to history
-      if (generatedComments.length > 0) {
-        const historyItem = {
-          id: generateId(),
-          comments: generatedComments,
-          context,
-          timestamp: Date.now(),
-        };
-        await addHistoryItem(historyItem);
-      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate comments';
       setError(errorMessage);
-    } finally {
-      setIsLoading(false);
     }
-  }, [currentTab, context, tone, length, language, count, generateComments, addHistoryItem]);
+  }, [currentTab, context, tone, length, language, count, generateComments]);
 
   // Copy comment
   const handleCopy = useCallback(async (comment: string, index: number) => {
@@ -215,44 +232,8 @@ function Popup() {
   }, [context.platform, currentTab]);
 
   // Check if AI is configured
-  const isAIConfigured = settings?.aiConfig?.apiKey && settings?.aiConfig?.baseUrl;
-
-  // Render loading state
-  if (isLoading && !comments.length) {
-    return (
-      <div className="min-w-[320px] p-4 bg-bg-primary text-text-primary">
-        <div className="flex items-center justify-center h-48">
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative">
-              <Sparkles className="w-8 h-8 text-primary-600 animate-pulse" />
-            </div>
-            <p className="text-sm text-text-secondary">Loading GhostReply...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Render error state
-  if (error && !comments.length) {
-    return (
-      <div className="min-w-[320px] p-4 bg-bg-primary text-text-primary">
-        <div className="text-center py-8">
-          <div className="w-12 h-12 mx-auto mb-3 text-red-500">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-text-primary mb-2">Error</h3>
-          <p className="text-sm text-text-secondary mb-4">{error}</p>
-          <Button onClick={handleGenerate} size="sm">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  const isAIConfigured = checkAIConfigured(settings);
+  const displayError = error || generationError;
 
   return (
     <div className="min-w-[320px] max-h-[600px] overflow-y-auto bg-bg-primary text-text-primary">
@@ -265,7 +246,9 @@ function Popup() {
             </div>
             <div>
               <h1 className="font-semibold text-text-primary">GhostReply</h1>
-              <p className="text-xs text-text-secondary">AI Comment Generator</p>
+              <p className="text-xs text-text-secondary">
+                {isContextLoading ? 'Detecting page...' : 'AI Comment Generator'}
+              </p>
             </div>
           </div>
           <div className="flex gap-1">
@@ -370,6 +353,19 @@ function Popup() {
             Configure API in Settings
           </p>
         )}
+
+        {displayError && (
+          <div className="mt-3 p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+            {displayError}
+          </div>
+        )}
+
+        {isGenerating && (
+          <div className="mt-3 flex items-center justify-center gap-2 text-sm text-text-secondary">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Generating reply...
+          </div>
+        )}
       </div>
 
       {/* Comments */}
@@ -457,7 +453,7 @@ function Popup() {
       )}
 
       {/* Empty State */}
-      {!isLoading && !comments.length && !error && (
+      {!isGenerating && !comments.length && !displayError && (
         <div className="px-4 py-8 text-center">
           <div className="w-16 h-16 mx-auto mb-4 bg-primary-50 dark:bg-primary-900/20 rounded-full flex items-center justify-center">
             <Sparkles className="w-8 h-8 text-primary-600" />

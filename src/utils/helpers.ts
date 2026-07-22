@@ -8,17 +8,56 @@ export function generateId(): string {
 }
 
 /**
- * Sanitize text to prevent XSS and other issues
+ * Decode common HTML entities that models sometimes return in plain text.
+ */
+export function decodeHtmlEntities(text: string): string {
+  if (!text) return '';
+
+  const named: Record<string, string> = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'",
+    '&#x2F;': '/',
+    '&#x27;': "'",
+    '&nbsp;': ' ',
+  };
+
+  return text
+    .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (entity) => {
+      const lower = entity.toLowerCase();
+      if (named[lower] !== undefined) return named[lower];
+      if (named[entity] !== undefined) return named[entity];
+
+      if (/^&#\d+;$/.test(entity)) {
+        const code = Number(entity.slice(2, -1));
+        return Number.isFinite(code) ? String.fromCharCode(code) : entity;
+      }
+
+      if (/^&#x[0-9a-f]+;$/i.test(entity)) {
+        const code = parseInt(entity.slice(3, -1), 16);
+        return Number.isFinite(code) ? String.fromCharCode(code) : entity;
+      }
+
+      return entity;
+    });
+}
+
+/**
+ * Clean text for comments / UI display.
+ * Do not HTML-escape — React text nodes already escape safely, and comments
+ * must stay readable when copied or inserted into social forms.
  */
 export function sanitizeText(text: string): string {
   if (!text) return '';
-  
-  return text
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/\//g, '&#x2F;')
+
+  return decodeHtmlEntities(text)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 

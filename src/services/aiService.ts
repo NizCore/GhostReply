@@ -2,20 +2,128 @@ import { AIConfig, ExtractedContext, GenerationOptions, GeneratedComment, Platfo
 import { generateId, sanitizeText } from '@utils/helpers';
 
 /**
+ * Normalize OpenAI-compatible base URLs.
+ * Accepts either `https://host/v1` or a full `.../chat/completions` URL.
+ */
+function normalizeBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
+  return trimmed
+    .replace(/\/chat\/completions$/i, '')
+    .replace(/\/responses$/i, '')
+    .replace(/\/messages$/i, '');
+}
+
+/**
+ * Clean pasted API keys (quotes, accidental Bearer prefix, whitespace).
+ */
+function normalizeApiKey(apiKey: string): string {
+  return apiKey
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+}
+
+/**
+ * Extract text content from OpenAI-compatible chat completion choices.
+ */
+function extractChoiceContent(choice: any): string | null {
+  if (!choice) return null;
+
+  const raw =
+    choice.message?.content ??
+    choice.delta?.content ??
+    choice.text ??
+    choice.content;
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed || null;
+  }
+
+  if (Array.isArray(raw)) {
+    const joined = raw
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part?.text) return part.text;
+        if (part?.content) return part.content;
+        return '';
+      })
+      .join('')
+      .trim();
+    return joined || null;
+  }
+
+  if (raw && typeof raw === 'object' && typeof raw.text === 'string') {
+    const trimmed = raw.text.trim();
+    return trimmed || null;
+  }
+
+  return null;
+}
+
+const REQUEST_TIMEOUT_MS = 90000;
+
+/**
+ * Fetch with timeout for slow OpenAI-compatible gateways.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s. Try again or switch model.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * AI Service for generating comments using OpenAI compatible APIs
  */
 export class AIService {
   private config: AIConfig;
 
   constructor(config: AIConfig) {
-    this.config = config;
+    this.config = this.normalizeConfig(config);
   }
 
   /**
    * Update AI configuration
    */
   updateConfig(config: AIConfig): void {
-    this.config = config;
+    this.config = this.normalizeConfig(config);
+  }
+
+  private normalizeConfig(config: AIConfig): AIConfig {
+    return {
+      ...config,
+      baseUrl: normalizeBaseUrl(config.baseUrl || ''),
+      apiKey: normalizeApiKey(config.apiKey || ''),
+      model: (config.model || '').trim(),
+    };
+  }
+
+  private getAuthHeaders(config: AIConfig = this.config): HeadersInit {
+    return {
+      Authorization: `Bearer ${config.apiKey}`,
+    };
+  }
+
+  private getJsonHeaders(config: AIConfig = this.config): HeadersInit {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    };
   }
 
   /**
@@ -37,7 +145,7 @@ export class AIService {
     // Format the comments
     return comments.map((content, index) => ({
       id: generateId(),
-      content: sanitizeText(content),
+      content: sanitizeText(content).replace(/^["'“”]+|["'“”]+$/g, '').trim(),
       tone,
       length,
       language,
@@ -100,22 +208,50 @@ export class AIService {
       ? `\n\nContext:\n${contextParts.join('\n')}` 
       : '';
 
-    // Build the prompt
-    const prompt = `You are an AI assistant that generates natural, engaging comments for social media platforms.${contextString}
+    const platformStyle = this.getPlatformCommenterStyle(platform);
 
-Requirements:
-- Write in a ${toneDescription} tone
+    // Build the prompt — write AS a real commenter, not about generating comments
+    const prompt = `You are a real person scrolling ${platform && platform !== 'unknown' ? platform : 'social media'} and leaving a comment under a post. You are NOT an AI, assistant, marketer, or brand voice.
+${contextString}
+
+Write ONE comment from a human commenter's point of view.
+
+Style:
+- Sound like a real person reacting to this specific post (opinion, reaction, question, or short take)
+- Tone: ${toneDescription}
 - ${lengthDescription}
 - ${languageInstruction}
-- Be natural and authentic
-- Match the platform's style
-- Don't mention you're an AI
-- Don't include any disclaimers
-- Return only the comment text, nothing else
+- ${platformStyle}
+- Use natural everyday language; contractions are fine
+- React to concrete details from the post when possible (not generic praise)
 
-Generate a comment based on the context above.`;
+Hard rules:
+- Do NOT say you are an AI, a bot, or that you generated this
+- Do NOT use corporate filler like "Great insights!", "Looking forward to the impact", "This resonates", "Thanks for sharing!" unless it truly fits
+- Do NOT add hashtags, emojis spam, disclaimers, titles, labels, or quotation marks around the whole comment
+- Do NOT write like a LinkedIn influencer pitch or a press release
+- Return ONLY the comment text`;
 
     return prompt;
+  }
+
+  /**
+   * Platform-specific "how real commenters write here" guidance
+   */
+  private getPlatformCommenterStyle(platform?: string): string {
+    switch (platform) {
+      case 'youtube':
+        return 'YouTube style: casual, direct, can be short; react to the video topic, not "great video" alone';
+      case 'linkedin':
+        return 'LinkedIn style: thoughtful but still human; avoid buzzword soup and fake inspiration';
+      case 'x':
+      case 'twitter':
+        return 'X/Twitter style: punchy, conversational, one clear thought';
+      case 'reddit':
+        return 'Reddit style: straightforward, specific, can be witty or blunt; no corporate speak';
+      default:
+        return 'Match normal comment-section style for the site';
+    }
   }
 
   /**
@@ -133,32 +269,36 @@ Generate a comment based on the context above.`;
       throw new Error('API key and base URL are required');
     }
 
-    // For multiple comments, we'll make separate requests or use a single request with n parameter
-    // Most OpenAI compatible APIs support the n parameter for multiple completions
-    
-    try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+    const endpoint = `${normalizeBaseUrl(baseUrl)}/chat/completions`;
+    const comments: string[] = [];
+    const targetCount = Math.max(1, Math.min(count, 5));
+
+    // Request one completion at a time — many OpenAI-compatible routers
+    // (including Bynara) do not reliably support the `n` parameter.
+    for (let i = 0; i < targetCount; i++) {
+      const userPrompt =
+        i === 0
+          ? prompt
+          : `${prompt}\n\nNote: Write a different variation from previous comments.`;
+
+      const response = await fetchWithTimeout(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
+        headers: this.getJsonHeaders(),
         body: JSON.stringify({
           model,
           messages: [
             {
               role: 'system',
-              content: 'You are a helpful assistant that generates social media comments.',
+              content:
+                'You write social media comments as a real human commenter. Output only the comment text—no quotes, labels, or explanations.',
             },
             {
               role: 'user',
-              content: prompt,
+              content: userPrompt,
             },
           ],
-          temperature,
+          temperature: Math.min(2, temperature + i * 0.1),
           max_tokens: maxTokens,
-          n: Math.min(count, 5), // Most APIs limit n to 5
-          stop: ['\n\n', '<|im_end|>', '<|im_start|>'],
         }),
       });
 
@@ -171,38 +311,34 @@ Generate a comment based on the context above.`;
       }
 
       const data = await response.json();
-      
-      // Extract comments from the response
-      const comments: string[] = [];
-      
-      if (data.choices && Array.isArray(data.choices)) {
+      let extracted: string | null = null;
+
+      if (Array.isArray(data.choices)) {
         for (const choice of data.choices) {
-          if (choice.message?.content) {
-            comments.push(choice.message.content);
-          }
+          extracted = extractChoiceContent(choice);
+          if (extracted) break;
         }
       }
 
-      // If we requested more comments than the API returned, generate additional ones
-      if (comments.length < count) {
-        const additionalComments = await this.generateAdditionalComments(
-          prompt,
-          count - comments.length,
-          context,
-          options
-        );
-        comments.push(...additionalComments);
+      if (!extracted && typeof data.content === 'string') {
+        extracted = data.content.trim() || null;
       }
 
-      return comments.slice(0, count);
-    } catch (error) {
-      console.error('AI generation error:', error);
-      throw error;
+      if (extracted) {
+        comments.push(extracted);
+      } else {
+        console.warn('AI response had no usable content:', data);
+        throw new Error(
+          'AI returned an empty response. Check the model id and try again.'
+        );
+      }
     }
+
+    return comments;
   }
 
   /**
-   * Generate additional comments if the API didn't return enough
+   * @deprecated Kept for compatibility — generation now loops in generateWithAI
    */
   private async generateAdditionalComments(
     prompt: string,
@@ -210,53 +346,7 @@ Generate a comment based on the context above.`;
     context: Partial<ExtractedContext>,
     options: GenerationOptions
   ): Promise<string[]> {
-    const comments: string[] = [];
-    
-    for (let i = 0; i < count; i++) {
-      try {
-        // Add a slight variation to the prompt to get different results
-        const variedPrompt = `${prompt}\n\nNote: This should be different from previous comments.`;
-        
-        const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: this.config.model,
-            messages: [
-              {
-                role: 'system',
-                content: 'You are a helpful assistant that generates social media comments.',
-              },
-              {
-                role: 'user',
-                content: variedPrompt,
-              },
-            ],
-            temperature: this.config.temperature + 0.1, // Slightly increase temperature for variation
-            max_tokens: this.config.maxTokens,
-            n: 1,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`AI API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.choices?.[0]?.message?.content) {
-          comments.push(data.choices[0].message.content);
-        }
-      } catch (error) {
-        console.error('Error generating additional comment:', error);
-        // Add a fallback comment
-        comments.push(this.generateFallbackComment(context, options));
-      }
-    }
-
-    return comments;
+    return this.generateWithAI(prompt, count, context, options);
   }
 
   /**
@@ -417,39 +507,103 @@ Generate a comment based on the context above.`;
   }
 
   /**
-   * Test the AI API connection
+   * Test the AI API connection.
+   * Prefers a minimal chat/completions ping (what GhostReply actually uses),
+   * and optionally lists models when available.
    */
-  async testConnection(): Promise<boolean> {
+  async testConnection(configOverride?: AIConfig): Promise<{ ok: boolean; message: string }> {
+    const config = this.normalizeConfig(configOverride || this.config);
+
+    if (!config.apiKey || !config.baseUrl) {
+      return { ok: false, message: 'API key and base URL are required' };
+    }
+
+    if (!config.model) {
+      return { ok: false, message: 'Enter a model id before testing the connection' };
+    }
+
     try {
-      const response = await fetch(`${this.config.baseUrl}/models`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-      });
-      return response.ok;
+      // Test the endpoint GhostReply actually uses for generation
+      const chatResponse = await fetchWithTimeout(`${config.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: this.getJsonHeaders(config),
+        body: JSON.stringify({
+          model: config.model,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+        }),
+      }, 30000);
+
+      if (chatResponse.ok) {
+        return { ok: true, message: 'Connection successful!' };
+      }
+
+      const errorData = await chatResponse.json().catch(() => ({}));
+      const apiMessage = errorData.error?.message || errorData.message;
+
+      if (chatResponse.status === 401 || chatResponse.status === 403) {
+        return {
+          ok: false,
+          message:
+            apiMessage ||
+            `Authentication failed (${chatResponse.status}). Check that your API key is valid and saved.`,
+        };
+      }
+
+      return {
+        ok: false,
+        message:
+          apiMessage ||
+          `Connection failed (${chatResponse.status} ${chatResponse.statusText})`,
+      };
     } catch (error) {
       console.error('Connection test error:', error);
-      return false;
+      const message = error instanceof Error ? error.message : 'Unknown network error';
+      return {
+        ok: false,
+        message: `Connection failed: ${message}. Check the base URL and extension host permissions.`,
+      };
     }
   }
 
   /**
-   * Get available models from the API
+   * Get available models from the API.
+   * Returns an empty list (with an error message) instead of throwing on auth/network failures.
    */
-  async getAvailableModels(): Promise<string[]> {
+  async getAvailableModels(
+    configOverride?: AIConfig
+  ): Promise<{ models: string[]; error: string | null }> {
+    const config = this.normalizeConfig(configOverride || this.config);
+
+    if (!config.apiKey || !config.baseUrl) {
+      return { models: [], error: 'API key and base URL are required' };
+    }
+
     try {
-      const response = await fetch(`${this.config.baseUrl}/models`, {
+      const response = await fetchWithTimeout(`${config.baseUrl}/models`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-      });
+        headers: this.getAuthHeaders(config),
+      }, 20000);
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        const apiMessage = errorData.error?.message || errorData.message;
+
+        if (response.status === 401 || response.status === 403) {
+          return {
+            models: [],
+            error:
+              apiMessage ||
+              `Invalid API key (${response.status}). You can still type a model id manually.`,
+          };
+        }
+
+        return {
+          models: [],
+          error:
+            apiMessage ||
+            `Could not list models (${response.status}). You can still type a model id manually.`,
+        };
       }
 
       const data = await response.json();
@@ -461,12 +615,20 @@ Generate a comment based on the context above.`;
             models.push(item.id);
           }
         }
+      } else if (Array.isArray(data)) {
+        for (const item of data) {
+          if (typeof item === 'string') models.push(item);
+          else if (item?.id) models.push(item.id);
+        }
       }
 
-      return models;
+      return { models, error: null };
     } catch (error) {
-      console.error('Error getting models:', error);
-      return [];
+      const message = error instanceof Error ? error.message : 'Network error';
+      return {
+        models: [],
+        error: `Could not list models: ${message}. You can still type a model id manually.`,
+      };
     }
   }
 }

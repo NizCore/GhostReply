@@ -29,6 +29,7 @@ import {
 } from '@utils/helpers';
 import { useSettings, useHistory, useFavorites, useTheme } from '@hooks/useStorage';
 import { useAI, useClipboard } from '@hooks/useAI';
+import { isAIConfigured as checkAIConfigured } from '@utils/storage';
 import { Button, Spinner } from '@components/Button';
 import { CustomSelect } from '@components/Select';
 import { Input, Textarea } from '@components/Input';
@@ -59,9 +60,9 @@ import './sidepanel.css';
  */
 function SidePanel() {
   const [settings] = useSettings();
-  const [history, addHistoryItem] = useHistory();
+  const [history] = useHistory();
   const [favorites, addFavorite, removeFavorite] = useFavorites();
-  const [generateComments, isGenerating, generationError, testConnection] = useAI();
+  const [generateComments, isGenerating, generationError] = useAI();
   const [copyToClipboard, isCopied] = useClipboard();
   const [theme] = useTheme();
 
@@ -69,7 +70,7 @@ function SidePanel() {
   const [context, setContext] = useState<Partial<ExtractedContext>>({});
   const [comments, setComments] = useState<GeneratedComment[]>([]);
   const [selectedCommentIndex, setSelectedCommentIndex] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isContextLoading, setIsContextLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState<chrome.tabs.Tab | null>(null);
   const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'favorites' | 'settings'>('generate');
@@ -84,34 +85,64 @@ function SidePanel() {
   // Custom context state
   const [customContext, setCustomContext] = useState('');
 
-  // Load initial data
+  // Load initial data — never block the whole UI on context extraction
   useEffect(() => {
+    let cancelled = false;
+
     async function loadInitialData() {
+      setIsContextLoading(true);
       try {
-        // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (cancelled) return;
+
         setCurrentTab(tab || null);
 
-        // Extract context
-        if (tab?.id) {
-          const response = await chrome.runtime.sendMessage({
+        if (tab?.url || tab?.title) {
+          setContext({
+            platform: getPlatformFromUrl(tab.url || '') as Platform,
+            url: tab.url || '',
+            title: tab.title || '',
+            description: '',
+            author: '',
+            postContent: '',
+            selectedText: '',
+            visibleText: '',
+          });
+        }
+
+        if (!tab?.id) return;
+
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({
             type: 'EXTRACT_CONTEXT',
             data: { tabId: tab.id },
-          });
+          }),
+          new Promise<{ error: string }>((resolve) =>
+            setTimeout(() => resolve({ error: 'Context extraction timed out' }), 4000)
+          ),
+        ]);
 
-          if (response?.data) {
-            setContext(response.data);
-          }
+        if (cancelled) return;
+
+        if (response?.error) {
+          console.warn('Context extraction:', response.error);
+          return;
+        }
+
+        if (response?.data) {
+          setContext(response.data);
         }
       } catch (err) {
-        console.error('Error loading initial data:', err);
-        setError('Failed to load page context');
+        console.warn('Error loading initial data:', err);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsContextLoading(false);
       }
     }
 
     loadInitialData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Update settings when they change
@@ -130,7 +161,6 @@ function SidePanel() {
       return;
     }
 
-    setIsLoading(true);
     setError(null);
     setComments([]);
 
@@ -149,24 +179,11 @@ function SidePanel() {
 
       const generatedComments = await generateComments(contextToUse, options);
       setComments(generatedComments);
-      
-      // Save to history
-      if (generatedComments.length > 0) {
-        const historyItem: HistoryItem = {
-          id: generateId(),
-          comments: generatedComments,
-          context: contextToUse,
-          timestamp: Date.now(),
-        };
-        await addHistoryItem(historyItem);
-      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate comments';
       setError(errorMessage);
-    } finally {
-      setIsLoading(false);
     }
-  }, [currentTab, context, tone, length, language, count, customContext, generateComments, addHistoryItem]);
+  }, [currentTab, context, tone, length, language, count, customContext, generateComments]);
 
   // Copy comment
   const handleCopy = useCallback(async (comment: string, index: number) => {
@@ -235,7 +252,8 @@ function SidePanel() {
   }, [context.platform, currentTab]);
 
   // Check if AI is configured
-  const isAIConfigured = settings?.aiConfig?.apiKey && settings?.aiConfig?.baseUrl;
+  const isAIConfigured = checkAIConfigured(settings);
+  const displayError = error || generationError;
 
   // Filter history by search query
   const filteredHistory = history.filter(item => {
@@ -266,20 +284,8 @@ function SidePanel() {
     setError(null);
   }, []);
 
-  // Render loading state
-  if (isLoading && activeTab === 'generate' && !comments.length) {
-    return (
-      <div className="h-full flex items-center justify-center bg-bg-primary text-text-primary">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <Sparkles className="w-8 h-8 text-primary-600 animate-pulse" />
-          </div>
-          <p className="text-sm text-text-secondary">Loading GhostReply...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Initial context load only — do not block the UI while generating
+  // (UI renders immediately; context fills in asynchronously)
   return (
     <div className="h-full flex flex-col bg-bg-primary text-text-primary">
       {/* Header */}
@@ -291,7 +297,9 @@ function SidePanel() {
             </div>
             <div>
               <h1 className="font-semibold text-text-primary">GhostReply</h1>
-              <p className="text-xs text-text-secondary">AI Comment Generator</p>
+              <p className="text-xs text-text-secondary">
+                {isContextLoading ? 'Detecting page...' : 'AI Comment Generator'}
+              </p>
             </div>
           </div>
           <div className="flex gap-1">
@@ -443,6 +451,13 @@ function SidePanel() {
                     Configure API in Settings
                   </p>
                 )}
+
+                {isGenerating && (
+                  <div className="mt-3 flex items-center justify-center gap-2 text-sm text-text-secondary">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating reply...
+                  </div>
+                )}
               </div>
 
               {/* Comments */}
@@ -537,7 +552,7 @@ function SidePanel() {
               )}
 
               {/* Empty State */}
-              {!isLoading && !comments.length && !error && activeTab === 'generate' && (
+              {!isGenerating && !comments.length && !displayError && activeTab === 'generate' && (
                 <div className="empty-state">
                   <div className="empty-state-icon">
                     <Sparkles className="w-16 h-16 text-primary-600 opacity-50" />
@@ -554,7 +569,7 @@ function SidePanel() {
               )}
 
               {/* Error State */}
-              {error && activeTab === 'generate' && (
+              {displayError && !comments.length && activeTab === 'generate' && (
                 <div className="error-state">
                   <div className="error-icon">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -562,7 +577,7 @@ function SidePanel() {
                     </svg>
                   </div>
                   <h3 className="error-title">Error</h3>
-                  <p className="error-description">{error}</p>
+                  <p className="error-description">{displayError}</p>
                   <div className="error-action">
                     <Button onClick={handleGenerate} size="sm">
                       <RefreshCw className="w-4 h-4 mr-1" />

@@ -256,6 +256,7 @@
   /* Card styles for settings groups */
   .settings-card {
     @apply bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6 dark:bg-gray-800 dark:border-gray-700;
+    overflow: visible;
   }
 
   .settings-card-header {

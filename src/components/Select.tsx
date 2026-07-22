@@ -1,4 +1,4 @@
-import React, { forwardRef, useState, useRef, useEffect } from 'react';
+import React, { forwardRef, useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { cn } from '@utils/cn';
 import { ChevronDown, Check } from 'lucide-react';
 
@@ -39,7 +39,6 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     },
     ref
   ) => {
-    const [isOpen, setIsOpen] = useState(false);
     const [selectedValue, setSelectedValue] = useState(value || '');
     const selectRef = useRef<HTMLSelectElement>(null);
 
@@ -57,7 +56,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       }
     };
 
-    const selectedOption = options.find(opt => opt.value === selectedValue);
+    useEffect(() => {
+      setSelectedValue(value || '');
+    }, [value]);
 
     return (
       <div className="w-full">
@@ -68,7 +69,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         )}
         <div className="relative">
           <select
-            ref={selectRef}
+            ref={ref || selectRef}
             value={selectedValue}
             onChange={handleChange}
             disabled={disabled}
@@ -93,8 +94,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                 value={option.value}
                 disabled={option.disabled}
               >
-                {option.emoji && <span className="mr-2">{option.emoji}</span>}
-                {option.label}
+                {option.emoji ? `${option.emoji} ${option.label}` : option.label}
               </option>
             ))}
           </select>
@@ -118,7 +118,6 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
 
 Select.displayName = 'Select';
 
-// Custom Select component with better styling
 export interface CustomSelectProps {
   label?: string;
   hint?: string;
@@ -130,6 +129,14 @@ export interface CustomSelectProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+}
+
+interface DropdownPosition {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+  openUpward: boolean;
 }
 
 export function CustomSelect({
@@ -146,7 +153,10 @@ export function CustomSelect({
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedValue, setSelectedValue] = useState(value || '');
+  const [position, setPosition] = useState<DropdownPosition | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const sizes = {
     sm: 'px-2 py-1 text-xs',
@@ -156,34 +166,75 @@ export function CustomSelect({
 
   const selectedOption = options.find(opt => opt.value === selectedValue);
 
+  const updatePosition = () => {
+    const button = buttonRef.current;
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const preferredMaxHeight = 240;
+    const gap = 4;
+
+    const openUpward = spaceBelow < Math.min(preferredMaxHeight, 160) && spaceAbove > spaceBelow;
+    const available = openUpward ? spaceAbove - gap - 8 : spaceBelow - gap - 8;
+    const maxHeight = Math.max(120, Math.min(preferredMaxHeight, available));
+
+    setPosition({
+      top: openUpward ? rect.top - gap : rect.bottom + gap,
+      left: rect.left,
+      width: rect.width,
+      maxHeight,
+      openUpward,
+    });
+  };
+
   const handleOptionClick = (optionValue: string) => {
     if (optionValue !== selectedValue) {
       setSelectedValue(optionValue);
-      if (onChange) {
-        onChange(optionValue);
-      }
+      onChange?.(optionValue);
     }
     setIsOpen(false);
   };
 
-  const handleClickOutside = (e: MouseEvent) => {
-    if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-      setIsOpen(false);
-    }
-  };
-
   useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        dropdownRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsOpen(false);
     };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
-    if (value !== selectedValue) {
-      setSelectedValue(value || '');
-    }
+    setSelectedValue(value || '');
   }, [value]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setPosition(null);
+      return;
+    }
+
+    updatePosition();
+
+    const handleReposition = () => updatePosition();
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [isOpen, options.length]);
 
   return (
     <div className={cn('w-full', className)} ref={dropdownRef}>
@@ -194,9 +245,12 @@ export function CustomSelect({
       )}
       <div className="relative">
         <button
+          ref={buttonRef}
           type="button"
           onClick={() => !disabled && setIsOpen(!isOpen)}
           disabled={disabled}
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
           className={cn(
             'w-full flex items-center justify-between border border-border-color rounded-lg bg-bg-primary text-text-primary',
             'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent',
@@ -207,26 +261,41 @@ export function CustomSelect({
             isOpen && 'ring-2 ring-primary-500 border-primary-500'
           )}
         >
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 truncate">
             {selectedOption?.emoji && <span>{selectedOption.emoji}</span>}
             {selectedOption?.icon && <span className="text-text-secondary">{selectedOption.icon}</span>}
             {selectedOption ? selectedOption.label : placeholder}
           </span>
           <ChevronDown
             className={cn(
-              'h-4 w-4 text-text-secondary transition-transform duration-200',
+              'h-4 w-4 text-text-secondary transition-transform duration-200 flex-shrink-0',
               isOpen && 'transform rotate-180'
             )}
             size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16}
           />
         </button>
-        
-        {isOpen && (
-          <div className="absolute z-50 w-full mt-1 bg-bg-secondary border border-border-color rounded-lg shadow-lg max-h-60 overflow-y-auto">
+
+        {isOpen && position && (
+          <div
+            ref={menuRef}
+            role="listbox"
+            className="fixed z-[9999] bg-bg-secondary border border-border-color rounded-lg shadow-lg overflow-y-auto"
+            style={{
+              left: position.left,
+              width: position.width,
+              maxHeight: position.maxHeight,
+              top: position.openUpward ? undefined : position.top,
+              bottom: position.openUpward
+                ? window.innerHeight - position.top
+                : undefined,
+            }}
+          >
             {options.map((option) => (
               <button
                 key={option.value}
                 type="button"
+                role="option"
+                aria-selected={selectedValue === option.value}
                 onClick={() => !option.disabled && handleOptionClick(option.value)}
                 disabled={option.disabled}
                 className={cn(
@@ -238,9 +307,9 @@ export function CustomSelect({
               >
                 {option.emoji && <span>{option.emoji}</span>}
                 {option.icon && <span className="text-text-secondary">{option.icon}</span>}
-                {option.label}
+                <span className="truncate">{option.label}</span>
                 {selectedValue === option.value && (
-                  <Check className="ml-auto h-4 w-4 text-primary-600" size={16} />
+                  <Check className="ml-auto h-4 w-4 text-primary-600 flex-shrink-0" size={16} />
                 )}
               </button>
             ))}

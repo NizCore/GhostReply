@@ -28,28 +28,49 @@ export function useSettings(): [
   () => Promise<void>
 ] {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load settings on mount
+  // Load settings on mount + keep in sync across pages
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
       try {
         const loadedSettings = await getSettings();
-        setSettings(loadedSettings);
+        if (!cancelled) setSettings(loadedSettings);
       } catch (error) {
         console.error('Error loading settings:', error);
-      } finally {
-        setIsLoading(false);
       }
     }
+
     load();
+
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      area: string
+    ) => {
+      if ((area === 'local' || area === 'sync') && changes[StorageKeys.SETTINGS]) {
+        const next = changes[StorageKeys.SETTINGS].newValue;
+        if (next) {
+          setSettings(next);
+        } else {
+          setSettings(DEFAULT_SETTINGS);
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => {
+      cancelled = true;
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
   }, []);
 
   // Save settings
   const save = useCallback(async (newSettings: UserSettings) => {
     try {
       await saveSettings(newSettings);
-      setSettings(newSettings);
+      const confirmed = await getSettings();
+      setSettings(confirmed);
     } catch (error) {
       console.error('Error saving settings:', error);
       throw error;
@@ -216,7 +237,7 @@ export function useStorageListener(
 ): void {
   useEffect(() => {
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-      if (area === 'sync' && changes[key]) {
+      if ((area === 'local' || area === 'sync') && changes[key]) {
         callback(changes[key].newValue, changes[key].oldValue);
       }
     };
@@ -233,12 +254,14 @@ export function useStorageListener(
  * Hook for getting current theme
  */
 export function useTheme(): [string, (theme: string) => Promise<void>] {
-  const [settings, saveSettings] = useSettings();
+  const [settings] = useSettings();
   const theme = settings.theme || 'system';
 
   const setTheme = useCallback(async (newTheme: string) => {
-    await saveSettings({ ...settings, theme: newTheme as any });
-  }, [settings, saveSettings]);
+    // Always merge into the latest stored settings to avoid wiping API keys
+    const current = await getSettings();
+    await saveSettings({ ...current, theme: newTheme as any });
+  }, []);
 
   return [theme, setTheme];
 }

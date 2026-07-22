@@ -14,7 +14,7 @@ import {
   THEME_OPTIONS,
   MODEL_OPTIONS
 } from '@types';
-import { useSettings, useTheme } from '@hooks/useStorage';
+import { useSettings } from '@hooks/useStorage';
 import { useAI } from '@hooks/useAI';
 import { Button, Spinner } from '@components/Button';
 import { Input, Textarea } from '@components/Input';
@@ -45,7 +45,6 @@ import './options.css';
  */
 function OptionsPage() {
   const [settings, saveSettings] = useSettings();
-  const [, setTheme] = useTheme();
   const [, , , testConnection, getModels] = useAI();
 
   // State
@@ -62,14 +61,18 @@ function OptionsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Load models on mount
+  // Keep local form state in sync with stored settings
   useEffect(() => {
-    if (aiConfig.apiKey && aiConfig.baseUrl) {
-      loadModels();
+    if (settings?.aiConfig) {
+      setAiConfig(settings.aiConfig);
+      setDefaultTone(settings.defaultTone || 'friendly');
+      setDefaultLength(settings.defaultLength || 'medium');
+      setDefaultLanguage(settings.defaultLanguage || 'auto');
+      setThemeState(settings.theme || 'system');
     }
-  }, [aiConfig.apiKey, aiConfig.baseUrl]);
+  }, [settings]);
 
-  // Load models
+  // Load models only when explicitly requested (refresh / successful connection test)
   const loadModels = useCallback(async () => {
     if (!aiConfig.apiKey || !aiConfig.baseUrl) return;
 
@@ -77,14 +80,19 @@ function OptionsPage() {
     setModelError(null);
 
     try {
-      const models = await getModels();
-      setAvailableModels(models);
+      const result = await getModels(aiConfig);
+      setAvailableModels(result.models);
+      if (result.error) {
+        setModelError(result.error);
+      } else if (result.models.length === 0) {
+        setModelError('No models returned. You can still type a model id manually.');
+      }
     } catch (error) {
-      setModelError('Failed to load models. Please check your API configuration.');
+      setModelError('Failed to load models. You can still type a model id manually.');
     } finally {
       setIsLoadingModels(false);
     }
-  }, [aiConfig.apiKey, aiConfig.baseUrl, getModels]);
+  }, [aiConfig, getModels]);
 
   // Test connection
   const handleTestConnection = useCallback(async () => {
@@ -97,19 +105,20 @@ function OptionsPage() {
     setConnectionStatus(null);
 
     try {
-      const success = await testConnection();
-      if (success) {
-        setConnectionStatus({ success: true, message: 'Connection successful!' });
+      const result = await testConnection(aiConfig);
+      if (result.ok) {
+        setConnectionStatus({ success: true, message: result.message });
         await loadModels();
       } else {
-        setConnectionStatus({ success: false, message: 'Connection failed. Please check your credentials.' });
+        setConnectionStatus({ success: false, message: result.message });
       }
     } catch (error) {
-      setConnectionStatus({ success: false, message: 'Connection failed. Please check your credentials.' });
+      const message = error instanceof Error ? error.message : 'Connection failed. Please check your credentials.';
+      setConnectionStatus({ success: false, message });
     } finally {
       setIsTestingConnection(false);
     }
-  }, [aiConfig.apiKey, aiConfig.baseUrl, testConnection, loadModels]);
+  }, [aiConfig, testConnection, loadModels]);
 
   // Save settings
   const handleSave = useCallback(async () => {
@@ -126,7 +135,6 @@ function OptionsPage() {
       };
 
       await saveSettings(newSettings);
-      setTheme(theme);
       setSaveStatus({ success: true, message: 'Settings saved successfully!' });
       
       // Reset status after 3 seconds
@@ -136,7 +144,7 @@ function OptionsPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [aiConfig, defaultTone, defaultLength, defaultLanguage, theme, saveSettings, setTheme]);
+  }, [aiConfig, defaultTone, defaultLength, defaultLanguage, theme, saveSettings]);
 
   // Reset to defaults
   const handleReset = useCallback(() => {
@@ -160,11 +168,16 @@ function OptionsPage() {
     setAvailableModels([]);
   }, []);
 
-  // Get model options including available models
-  const modelOptions = MODEL_OPTIONS.map(opt => ({
-    ...opt,
-    disabled: availableModels.length > 0 && !availableModels.includes(opt.value),
-  }));
+  // Get model options including available models from the API
+  const modelOptions = [
+    ...availableModels
+      .filter((id) => !MODEL_OPTIONS.some((opt) => opt.value === id))
+      .map((id) => ({ value: id, label: id })),
+    ...MODEL_OPTIONS.map((opt) => ({
+      ...opt,
+      disabled: availableModels.length > 0 && !availableModels.includes(opt.value),
+    })),
+  ];
 
   // Check if current model is available
   const isCurrentModelAvailable = availableModels.length === 0 || 
@@ -251,9 +264,9 @@ function OptionsPage() {
                   type="password"
                   value={aiConfig.apiKey}
                   onChange={(e) => handleAiConfigChange('apiKey', e.target.value)}
-                  placeholder="Enter your API key"
+                  placeholder="sk_nry_your_api_key"
                   className="api-config-input"
-                  hint="Your API key will be stored securely in Chrome's sync storage"
+                  hint="Paste only the key (no Bearer prefix). Save after changing it."
                 />
               </div>
 
@@ -266,9 +279,9 @@ function OptionsPage() {
                   type="url"
                   value={aiConfig.baseUrl}
                   onChange={(e) => handleAiConfigChange('baseUrl', e.target.value)}
-                  placeholder="https://api.openai.com/v1"
+                  placeholder="https://router.bynara.id/v1"
                   className="api-config-input"
-                  hint="The base URL for your OpenAI compatible API"
+                  hint="OpenAI-compatible root URL ending in /v1 (not /chat/completions)"
                 />
               </div>
 
@@ -277,25 +290,39 @@ function OptionsPage() {
                   <Bot className="w-4 h-4 mr-2 inline" />
                   Model
                 </label>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <CustomSelect
-                      options={modelOptions}
-                      value={aiConfig.model}
-                      onChange={(value) => handleAiConfigChange('model', value)}
-                      disabled={isLoadingModels}
-                      placeholder="Select a model"
-                      hint={isCurrentModelAvailable ? '' : 'This model may not be available with your current API'}
-                    />
+                <div className="space-y-2">
+                  <Input
+                    type="text"
+                    value={aiConfig.model}
+                    onChange={(e) => handleAiConfigChange('model', e.target.value)}
+                    placeholder="claude-opus-4.8-bynara"
+                    className="api-config-input"
+                    hint="Enter any model id your provider supports"
+                  />
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <CustomSelect
+                        options={modelOptions}
+                        value={
+                          modelOptions.some((opt) => opt.value === aiConfig.model)
+                            ? aiConfig.model
+                            : ''
+                        }
+                        onChange={(value) => handleAiConfigChange('model', value)}
+                        disabled={isLoadingModels}
+                        placeholder="Or pick from list"
+                        hint={isCurrentModelAvailable ? '' : 'This model was not returned by /models'}
+                      />
+                    </div>
+                    <Button
+                      onClick={loadModels}
+                      isLoading={isLoadingModels}
+                      disabled={!aiConfig.apiKey || !aiConfig.baseUrl}
+                      title="Refresh models"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
                   </div>
-                  <Button
-                    onClick={loadModels}
-                    isLoading={isLoadingModels}
-                    disabled={!aiConfig.apiKey || !aiConfig.baseUrl}
-                    title="Refresh models"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
                 </div>
                 {modelError && (
                   <p className="text-xs text-red-500 mt-1">{modelError}</p>

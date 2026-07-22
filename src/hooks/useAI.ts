@@ -6,6 +6,7 @@ import {
   AIConfig
 } from '@types';
 import { getAIService, resetAIService } from '@services/aiService';
+import { getSettings } from '@utils/storage';
 import { useSettings } from './useStorage';
 
 /**
@@ -18,8 +19,8 @@ export function useAI(): [
   ) => Promise<GeneratedComment[]>,
   boolean,
   string | null,
-  () => Promise<boolean>,
-  () => Promise<string[]>
+  (config?: AIConfig) => Promise<{ ok: boolean; message: string }>,
+  (config?: AIConfig) => Promise<{ models: string[]; error: string | null }>
 ] {
   const [settings] = useSettings();
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +34,7 @@ export function useAI(): [
     }
   }, [settings?.aiConfig]);
 
-  // Generate comments
+  // Generate comments via background worker (reliable host access + shared config)
   const generateComments = useCallback(
     async (
       context: Partial<ExtractedContext>,
@@ -43,13 +44,34 @@ export function useAI(): [
       setError(null);
 
       try {
-        const aiService = getAIService();
-        
-        if (!aiService.isConfigured()) {
+        // Always refresh from storage so we use the latest saved API config
+        const latestSettings = await getSettings();
+        resetAIService();
+        getAIService(latestSettings.aiConfig);
+
+        if (!latestSettings.aiConfig?.apiKey || !latestSettings.aiConfig?.baseUrl) {
           throw new Error('AI is not configured. Please set up your API key and base URL in settings.');
         }
 
-        const comments = await aiService.generateComments(context, options);
+        const response = await chrome.runtime.sendMessage({
+          type: 'GENERATE_COMMENT',
+          data: { context, options },
+        });
+
+        if (chrome.runtime.lastError) {
+          throw new Error(chrome.runtime.lastError.message);
+        }
+
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+
+        const comments = response?.data as GeneratedComment[] | undefined;
+
+        if (!comments || !Array.isArray(comments) || comments.length === 0) {
+          throw new Error('No comments were generated. Check your model and try again.');
+        }
+
         return comments;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to generate comments';
@@ -62,25 +84,30 @@ export function useAI(): [
     []
   );
 
-  // Test AI connection
-  const testConnection = useCallback(async (): Promise<boolean> => {
+  // Test AI connection using saved settings or an explicit draft config
+  const testConnection = useCallback(async (config?: AIConfig): Promise<{ ok: boolean; message: string }> => {
     try {
-      const aiService = getAIService();
-      return await aiService.testConnection();
+      const latest = config || (await getSettings()).aiConfig;
+      const aiService = getAIService(latest);
+      return await aiService.testConnection(latest);
     } catch (error) {
       console.error('Connection test error:', error);
-      return false;
+      const message = error instanceof Error ? error.message : 'Connection failed';
+      return { ok: false, message };
     }
   }, []);
 
-  // Get available models
-  const getModels = useCallback(async (): Promise<string[]> => {
+  // Get available models using saved settings or an explicit draft config
+  const getModels = useCallback(async (
+    config?: AIConfig
+  ): Promise<{ models: string[]; error: string | null }> => {
     try {
-      const aiService = getAIService();
-      return await aiService.getAvailableModels();
+      const latest = config || (await getSettings()).aiConfig;
+      const aiService = getAIService(latest);
+      return await aiService.getAvailableModels(latest);
     } catch (error) {
-      console.error('Error getting models:', error);
-      return [];
+      const message = error instanceof Error ? error.message : 'Failed to load models';
+      return { models: [], error: message };
     }
   }, []);
 

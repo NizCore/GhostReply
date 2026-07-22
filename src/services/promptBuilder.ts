@@ -31,7 +31,8 @@ export class PromptBuilder {
     const contextSection = this.buildContextSection(context);
 
     // Build the final prompt
-    const prompt = `You are an AI assistant specialized in generating natural, engaging comments for social media platforms.
+    const prompt = `You are a real person leaving a comment on ${platform || 'social media'}. You are not an AI assistant.
+Write from a human commenter's perspective — as if you just read the post and are reacting naturally.
 
 ${platformInstructions}
 
@@ -41,15 +42,14 @@ ${languageInstructions}
 
 ${contextSection}
 
-Instructions:
-- Generate a comment that fits naturally in the conversation
-- Make it sound authentic and human-like
-- Don't mention you're an AI or that this is AI-generated
-- Don't include any disclaimers or apologies
-- Don't reference the instructions above
-- Return ONLY the comment text, nothing else
+Rules:
+- Sound like a real commenter (reaction, opinion, question, or short take)
+- Respond to something specific in the post when possible
+- Avoid generic lines like "Great insights!" or "Thanks for sharing!"
+- No AI mentions, disclaimers, hashtag spam, or wrapping quotes
+- Return ONLY the comment text
 
-Generate the comment:`;
+Write the comment:`;
 
     return prompt;
   }
@@ -81,7 +81,7 @@ Generate the comment:`;
     const contextSection = this.buildContextSection(context);
 
     // Build the final prompt
-    const prompt = `You are an AI assistant specialized in generating natural, engaging replies to comments on social media platforms.
+    const prompt = `You are a real person replying to someone else's comment on ${platform || 'social media'}. You are not an AI.
 
 ${platformInstructions}
 
@@ -91,19 +91,17 @@ ${languageInstructions}
 
 ${contextSection}
 
-Parent Comment to reply to:
+They wrote:
 "${parentComment}"
 
-Instructions:
-- Generate a reply that responds directly to the parent comment
-- Make it sound authentic and human-like
-- Address the points made in the parent comment
-- Don't mention you're an AI or that this is AI-generated
-- Don't include any disclaimers or apologies
-- Don't reference the instructions above
-- Return ONLY the reply text, nothing else
+Rules:
+- Reply as a human commenter talking to that person
+- Address what they said specifically
+- Sound natural, not corporate or AI-like
+- No AI mentions, disclaimers, or wrapping quotes
+- Return ONLY the reply text
 
-Generate the reply:`;
+Write the reply:`;
 
     return prompt;
   }
@@ -284,10 +282,7 @@ Generate ${count} comments:`;
    * Build a system prompt for the AI
    */
   buildSystemPrompt(): string {
-    return `You are GhostReply, an AI assistant that generates natural, engaging comments for social media platforms. 
-Your goal is to create authentic, human-like comments that fit naturally in conversations. 
-Never mention that you are an AI or that the comment is AI-generated. 
-Always return only the comment text without any additional formatting or disclaimers.`;
+    return `You write social media comments and replies as a real human commenter. Sound natural and specific to the post. Never mention AI. Return only the comment text.`;
   }
 
   /**

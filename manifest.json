@@ -47,11 +47,9 @@
     "contextMenus"
   ],
   "host_permissions": [
-    "https://*.youtube.com/*",
-    "https://*.linkedin.com/*",
-    "https://*.x.com/*",
-    "https://*.twitter.com/*",
-    "https://*.reddit.com/*"
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "commands": {
     "open_ghostreply": {
@@ -59,6 +57,5 @@
       "description": "Open GhostReply"
     }
   },
-  "minimum_chrome_version": "110",
-  "default_locale": "en"
+  "minimum_chrome_version": "110"
 }

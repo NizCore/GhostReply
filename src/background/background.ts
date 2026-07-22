@@ -154,31 +154,74 @@ const messageHandlers: Record<string, (data: any, requestId: string) => Promise<
 
   // Context extraction handlers
   EXTRACT_CONTEXT: async (data: { tabId?: number }) => {
-    const tabId = data.tabId || (await getCurrentTabId());
+    const tabId = data?.tabId || (await getCurrentTabId());
     if (!tabId) {
       throw new Error('No active tab found');
     }
 
-    // Execute content script to extract context
-    const result = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        // This function will be injected into the page
-        return (window as any).extractContextForBackground();
-      },
-    });
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    const fallbackContext = {
+      platform: 'unknown' as const,
+      url: tab?.url || '',
+      title: tab?.title || '',
+      description: '',
+      author: '',
+      postContent: '',
+      selectedText: '',
+      visibleText: '',
+    };
 
-    if (result && result[0]?.result) {
-      return result[0].result;
+    // Prefer messaging the content script, but never hang the UI waiting on it
+    try {
+      const result = await sendMessageToTab(tabId, 'EXTRACT_CONTEXT', undefined, 2500);
+      if (result && typeof result === 'object') {
+        return { ...fallbackContext, ...result };
+      }
+    } catch (messageError) {
+      console.warn('Content script context extraction unavailable:', messageError);
     }
 
-    // Fallback: send message to content script
-    return await sendMessageToTab(tabId, 'EXTRACT_CONTEXT');
+    // Fallback: inject a lightweight extractor (also time-bounded by caller)
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          const extractor = (window as any).extractContextForBackground;
+          if (typeof extractor === 'function') {
+            return extractor();
+          }
+          return {
+            platform: 'unknown',
+            url: window.location.href,
+            title: document.title || '',
+            description: '',
+            author: '',
+            postContent: '',
+            selectedText: window.getSelection()?.toString() || '',
+            visibleText: '',
+          };
+        },
+      });
+
+      const value = injected?.[0]?.result;
+      if (value && typeof value === 'object') {
+        // extractContextForBackground may return a Promise
+        const resolved = await Promise.resolve(value);
+        return { ...fallbackContext, ...resolved };
+      }
+    } catch (scriptError) {
+      console.warn('Context extraction fallback failed:', scriptError);
+    }
+
+    return fallbackContext;
   },
 
   // Comment generation handlers
   GENERATE_COMMENT: async (data: { context: Partial<ExtractedContext>; options: GenerationOptions }) => {
-    const aiService = getAIService();
+    // Refresh settings so generation always uses the latest saved API config
+    currentSettings = await getSettings();
+    resetAIService();
+    const aiService = getAIService(currentSettings.aiConfig);
     
     if (!aiService.isConfigured()) {
       throw new Error('AI is not configured. Please set up your API key and base URL in settings.');
@@ -186,6 +229,10 @@ const messageHandlers: Record<string, (data: any, requestId: string) => Promise<
 
     const comments = await aiService.generateComments(data.context, data.options);
     
+    if (!comments.length) {
+      throw new Error('No comments were generated. Check your model and try again.');
+    }
+
     // Save to history
     const historyItem: HistoryItem = {
       id: generateId(),
@@ -275,15 +322,39 @@ async function getCurrentTabId(): Promise<number | undefined> {
   return tab?.id;
 }
 
-// Helper function to send message to a specific tab
-async function sendMessageToTab(tabId: number, type: string, data?: any): Promise<any> {
+// Helper function to send message to a specific tab (with timeout)
+async function sendMessageToTab(
+  tabId: number,
+  type: string,
+  data?: any,
+  timeoutMs = 5000
+): Promise<any> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Timed out waiting for content script (${type})`));
+    }, timeoutMs);
+
     chrome.tabs.sendMessage(tabId, { type, data }, (response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
       }
-      resolve(response);
+
+      if (response?.error) {
+        reject(new Error(response.error));
+        return;
+      }
+
+      // Content handlers wrap payloads as { data: ... }
+      resolve(response?.data !== undefined ? response.data : response);
     });
   });
 }
@@ -295,7 +366,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 // Handle storage changes (sync settings across tabs)
 chrome.storage.onChanged.addListener(async (changes, area) => {
-  if (area === 'sync' && changes[StorageKeys.SETTINGS]) {
+  if ((area === 'local' || area === 'sync') && changes[StorageKeys.SETTINGS]) {
     currentSettings = changes[StorageKeys.SETTINGS].newValue || DEFAULT_SETTINGS;
     resetAIService();
     getAIService(currentSettings.aiConfig);

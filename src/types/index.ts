@@ -100,6 +100,8 @@ export const MESSAGE_TYPES = [
   'GENERATE_COMMENT',
   'GENERATE_COMMENT_RESPONSE',
   'GENERATE_COMMENT_ERROR',
+  'GENERATE_FROM_SELECTION',
+  'GENERATE_REPLY_FROM_SELECTION',
   'INSERT_COMMENT',
   'INSERT_COMMENT_RESPONSE',
   'GET_SETTINGS',
@@ -144,9 +146,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   defaultLanguage: 'auto',
   theme: 'system',
   aiConfig: {
-    baseUrl: 'https://api.openai.com/v1',
+    baseUrl: 'https://router.bynara.id/v1',
     apiKey: '',
-    model: 'gpt-3.5-turbo',
+    model: 'claude-opus-4.8-bynara',
     temperature: 0.7,
     maxTokens: 500,
   },
@@ -211,6 +213,13 @@ export const THEME_OPTIONS: { value: Theme; label: string; emoji: string }[] = [
 
 // AI Model options
 export const MODEL_OPTIONS: { value: string; label: string }[] = [
+  { value: 'claude-opus-4.8-bynara', label: 'Claude Opus 4.8 (Bynara)' },
+  { value: 'auto/bynara', label: 'Auto (Bynara)' },
+  { value: 'agnes-2.0-flash', label: 'Agnes 2.0 Flash' },
+  { value: 'grok-4.5', label: 'Grok 4.5' },
+  { value: 'mistral-large', label: 'Mistral Large' },
+  { value: 'mistral-medium-3-5', label: 'Mistral Medium 3.5' },
+  { value: 'nemotron-3-ultra', label: 'Nemotron 3 Ultra' },
   { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
   { value: 'gpt-4', label: 'GPT-4' },
   { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
@@ -221,6 +230,5 @@ export const MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'claude-3-opus', label: 'Claude 3 Opus' },
   { value: 'llama-3-8b', label: 'Llama 3 8B' },
   { value: 'llama-3-70b', label: 'Llama 3 70B' },
-  { value: 'mistral-large', label: 'Mistral Large' },
   { value: 'gemini-pro', label: 'Gemini Pro' },
 ];
